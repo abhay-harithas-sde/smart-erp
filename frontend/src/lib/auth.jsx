@@ -9,6 +9,8 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Skip /auth/me check if returning from OAuth callback — AuthCallback handles it
+    if (window.location.hash?.includes("session_id=")) { setLoading(false); return; }
     const token = localStorage.getItem("ath_token");
     if (!token) { setLoading(false); return; }
     api.get("/auth/me").then((r) => {
@@ -18,6 +20,13 @@ export function AuthProvider({ children }) {
       localStorage.removeItem("ath_token");
     }).finally(() => setLoading(false));
   }, []);
+
+  const refresh = async () => {
+    const r = await api.get("/auth/me");
+    setUser(r.data.user);
+    setTenant(r.data.tenant);
+    return r.data;
+  };
 
   const login = async (email, password) => {
     const r = await api.post("/auth/login", { email, password });
@@ -42,7 +51,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthCtx.Provider value={{ user, tenant, loading, login, signup, logout }}>
+    <AuthCtx.Provider value={{ user, tenant, loading, login, signup, logout, refresh }}>
       {children}
     </AuthCtx.Provider>
   );

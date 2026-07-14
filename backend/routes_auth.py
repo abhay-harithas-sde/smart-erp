@@ -1,10 +1,14 @@
 """Auth + tenant signup routes."""
-from fastapi import APIRouter, HTTPException, Depends
+import httpx
+from fastapi import APIRouter, HTTPException, Depends, Header
+from typing import Optional
 from db import db, strip_mongo_id
 from auth import hash_password, verify_password, make_token, get_current, AuthContext, require_roles
 from models import Tenant, User, SignupIn, LoginIn, InviteIn, Location
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+EMERGENT_SESSION_URL = "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data"
 
 
 @router.post("/signup")
@@ -66,6 +70,60 @@ async def me(ctx: AuthContext = Depends(get_current)):
 async def list_users(ctx: AuthContext = Depends(require_roles("owner", "manager"))):
     users = await db.users.find({"tenant_id": ctx.tenant_id}, {"_id": 0, "password_hash": 0}).to_list(500)
     return users
+
+
+@router.post("/google/session")
+async def google_session(x_session_id: Optional[str] = Header(None, alias="X-Session-ID")):
+    """Exchange Emergent Google session_id for our own JWT.
+    - Existing email → log into their tenant.
+    - New email → auto-create tenant, user becomes Owner.
+    """
+    if not x_session_id:
+        raise HTTPException(400, "Missing X-Session-ID header")
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as http:
+            r = await http.get(EMERGENT_SESSION_URL, headers={"X-Session-ID": x_session_id})
+        if r.status_code != 200:
+            raise HTTPException(401, "Invalid Google session")
+        data = r.json()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Auth service unavailable: {e}")
+
+    email = (data.get("email") or "").lower()
+    name = data.get("name") or email.split("@")[0]
+    if not email:
+        raise HTTPException(400, "No email returned from Google")
+
+    existing = await db.users.find_one({"email": email})
+    if existing:
+        if not existing.get("active", True):
+            raise HTTPException(403, "Account disabled")
+        user = existing
+    else:
+        # Auto-create tenant + user (Option C - new email gets own workspace as Owner)
+        tenant = Tenant(name=f"{name}'s Workspace", business_type="retail")
+        await db.tenants.insert_one(tenant.model_dump())
+        await db.locations.insert_one(Location(tenant_id=tenant.id, name="Main Store").model_dump())
+        new_user = User(
+            tenant_id=tenant.id,
+            email=email,
+            name=name,
+            role="owner",
+            password_hash="",  # Google-only account
+        )
+        await db.users.insert_one(new_user.model_dump())
+        user = new_user.model_dump()
+
+    tenant = strip_mongo_id(await db.tenants.find_one({"id": user["tenant_id"]}))
+    token = make_token(user["id"], user["tenant_id"], user["role"])
+    return {
+        "token": token,
+        "user": {"id": user["id"], "email": user["email"], "name": user["name"], "role": user["role"]},
+        "tenant": tenant,
+    }
 
 
 @router.post("/invite")
