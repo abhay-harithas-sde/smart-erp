@@ -1,5 +1,7 @@
 """ElevenLabs text-to-speech for AI insights read-aloud."""
 import os
+import asyncio
+import functools
 from io import BytesIO
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -9,11 +11,13 @@ from auth import get_current, AuthContext
 
 router = APIRouter(prefix="/tts", tags=["tts"])
 
-_api_key = os.environ["ELEVENLABS_API_KEY"]
 _voice_id = os.environ.get("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")  # Rachel
 _model_id = os.environ.get("ELEVENLABS_MODEL", "eleven_multilingual_v2")
 
-_client = ElevenLabs(api_key=_api_key)
+
+@functools.lru_cache(maxsize=1)
+def _get_tts_client():
+    return ElevenLabs(api_key=os.environ["ELEVENLABS_API_KEY"])
 
 
 class TTSIn(BaseModel):
@@ -28,17 +32,23 @@ async def speak(inp: TTSIn, ctx: AuthContext = Depends(get_current)):
 
     voice = inp.voice_id or _voice_id
     try:
-        audio_stream = _client.text_to_speech.convert(
+        client = _get_tts_client()
+        audio_stream = client.text_to_speech.convert(
             voice_id=voice,
             model_id=_model_id,
             text=inp.text,
             output_format="mp3_44100_128",
         )
-        # SDK returns a generator of bytes chunks
-        buf = BytesIO()
-        for chunk in audio_stream:
-            if chunk:
-                buf.write(chunk)
+        # SDK returns a generator of bytes chunks; iterate in thread to avoid blocking event loop
+        def _collect_audio():
+            buf = BytesIO()
+            for chunk in audio_stream:
+                if chunk:
+                    buf.write(chunk)
+            return buf.getvalue()
+
+        audio_bytes = await asyncio.to_thread(_collect_audio)
+        buf = BytesIO(audio_bytes)
         buf.seek(0)
     except Exception as e:
         msg = str(e)
@@ -56,7 +66,8 @@ async def speak(inp: TTSIn, ctx: AuthContext = Depends(get_current)):
 @router.get("/voices")
 async def list_voices(ctx: AuthContext = Depends(get_current)):
     try:
-        result = _client.voices.get_all()
+        client = _get_tts_client()
+        result = client.voices.get_all()
         voices = [{"voice_id": v.voice_id, "name": v.name, "category": getattr(v, "category", None)} for v in result.voices]
         return {"voices": voices, "default": _voice_id}
     except Exception as e:

@@ -6,8 +6,8 @@ from auth import hash_password
 from models import Tenant, User, Location, Product, Supplier, StockLevel, StockMovement, Sale, PurchaseOrder, now_iso, gen_id
 
 
-DEMO_EMAIL = "owner@demo.ath"
-DEMO_PASSWORD = "demo1234"
+DEMO_EMAIL = ""
+DEMO_PASSWORD = ""
 
 
 async def seed_demo():
@@ -24,7 +24,7 @@ async def seed_demo():
         password_hash=hash_password(DEMO_PASSWORD),
     )
     cashier = User(
-        tenant_id=tid, email="cashier@demo.ath", name="Cashier Priya", role="cashier",
+        tenant_id=tid, email="", name="Cashier Priya", role="cashier",
         password_hash=hash_password(DEMO_PASSWORD),
     )
     await db.users.insert_many([owner.model_dump(), cashier.model_dump()])
@@ -111,8 +111,7 @@ async def seed_demo():
                     {"tenant_id": tid, "product_id": p.id, "location_id": loc.id},
                     {"$inc": {"qty": -qty}},
                 )
-                mv = StockMovement(tenant_id=tid, product_id=p.id, location_id=loc.id, qty=-qty, kind="sale", unit_cost=p.cost, note=f"Sale INV-{invoice_seq:06d}")
-                mv.created_at = day.isoformat()
+                mv = StockMovement(tenant_id=tid, product_id=p.id, location_id=loc.id, qty=-qty, kind="sale", unit_cost=p.cost, note=f"Sale INV-{invoice_seq:06d}", created_at=day.isoformat())
                 await db.stock_movements.insert_one(mv.model_dump())
 
             sale = Sale(
@@ -120,9 +119,8 @@ async def seed_demo():
                 customer_name=random.choice(["", "Walk-in", "Rahul S.", "Anjali K.", "Guest"]),
                 lines=lines, subtotal=round(subtotal, 2), tax=round(tax, 2),
                 total=round(subtotal + tax, 2), payment_mode=random.choice(["cash", "upi", "card"]),
-                status="paid", cashier_id=cashier.id,
+                status="paid", cashier_id=cashier.id, created_at=day.isoformat(),
             )
-            sale.created_at = day.isoformat()
             await db.sales.insert_one(sale.model_dump())
 
     return {"seeded": True, "tenant_id": tid, "email": DEMO_EMAIL, "password": DEMO_PASSWORD}

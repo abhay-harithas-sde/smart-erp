@@ -5,6 +5,7 @@ Use cases:
 - SMS receipt to customer after POS checkout
 """
 import os
+import functools
 from twilio.rest import Client
 from twilio.base.exceptions import TwilioRestException
 from fastapi import APIRouter, Depends, HTTPException
@@ -15,12 +16,14 @@ from models import now_iso
 
 router = APIRouter(prefix="/notify", tags=["notify"])
 
-_sid = os.environ["TWILIO_ACCOUNT_SID"]
-_token = os.environ["TWILIO_AUTH_TOKEN"]
-_from_sms = os.environ["TWILIO_PHONE_NUMBER"]
-_from_wa = os.environ["TWILIO_WHATSAPP_FROM"]
 
-_client = Client(_sid, _token)
+@functools.lru_cache(maxsize=1)
+def _get_twilio_config():
+    sid = os.environ["TWILIO_ACCOUNT_SID"]
+    token = os.environ["TWILIO_AUTH_TOKEN"]
+    from_sms = os.environ["TWILIO_PHONE_NUMBER"]
+    from_wa = os.environ["TWILIO_WHATSAPP_FROM"]
+    return (Client(sid, token), from_sms, from_wa)
 
 
 class SMSIn(BaseModel):
@@ -34,11 +37,13 @@ class WhatsAppIn(BaseModel):
 
 
 def _send_sms(to: str, body: str) -> str:
+    _client, _from_sms, _from_wa = _get_twilio_config()
     msg = _client.messages.create(from_=_from_sms, to=to, body=body)
     return msg.sid
 
 
 def _send_whatsapp(to: str, body: str) -> str:
+    _client, _from_sms, _from_wa = _get_twilio_config()
     to_wa = to if to.startswith("whatsapp:") else f"whatsapp:{to}"
     msg = _client.messages.create(from_=_from_wa, to=to_wa, body=body)
     return msg.sid
@@ -82,9 +87,9 @@ async def send_low_stock_digest(inp: WhatsAppIn, ctx: AuthContext = Depends(requ
             lows.append(f"• {p['name']} — stock: {total} (reorder ≤ {p.get('reorder_level', 10)})")
 
     if not lows:
-        body = "✅ ATH ERP: All products are above reorder level. Nothing to worry about today."
+        body = "✅ Smart Ledger: All products are above reorder level. Nothing to worry about today."
     else:
-        body = "⚠️ ATH ERP low-stock alert:\n\n" + "\n".join(lows[:15])
+        body = "⚠️ Smart Ledger low-stock alert:\n\n" + "\n".join(lows[:15])
         if len(lows) > 15:
             body += f"\n\n…and {len(lows) - 15} more."
 
@@ -114,7 +119,7 @@ async def send_daily_pnl(inp: WhatsAppIn, ctx: AuthContext = Depends(require_rol
     tax = sum(s.get("tax", 0) for s in sales)
 
     body = (
-        f"📊 ATH Daily Summary — {today}\n"
+        f"📊 Smart Ledger Daily Summary — {today}\n"
         f"Orders: {orders}\n"
         f"Revenue: ₹{revenue:,.2f}\n"
         f"Tax collected: ₹{tax:,.2f}"

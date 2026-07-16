@@ -16,15 +16,21 @@ export default function POS() {
 
   const { data: products = [] } = useQuery({ queryKey: ["products-pos", q], queryFn: async () => (await api.get(`/inventory/products${q ? `?q=${encodeURIComponent(q)}` : ""}`)).data });
   const { data: locations = [] } = useQuery({ queryKey: ["locations"], queryFn: async () => (await api.get("/inventory/locations")).data });
-  const locationId = locations[0]?.id;
+  const [selectedLocationId, setSelectedLocationId] = useState(null);
+
+  useEffect(() => {
+    if (locations.length > 0 && !selectedLocationId) {
+      setSelectedLocationId(locations[0]?.id);
+    }
+  }, [locations, selectedLocationId]);
 
   const checkout = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (mode) => {
       const payload = {
-        location_id: locationId,
+        location_id: selectedLocationId,
         customer_name: customer,
         lines: cart.map(c => ({ product_id: c.id, name: c.name, sku: c.sku, qty: c.qty, price: c.price, tax_rate: c.tax_rate, line_total: 0 })),
-        payment_mode: paymentMode,
+        payment_mode: mode || paymentMode,
       };
       return (await api.post("/pos/sales", payload)).data;
     },
@@ -64,7 +70,7 @@ export default function POS() {
     const handler = (e) => {
       if (e.code === "Space" && !e.target.matches("input,textarea")) {
         e.preventDefault();
-        if (cart.length > 0 && !checkout.isPending) checkout.mutate();
+        if (cart.length > 0 && !checkout.isPending) checkout.mutate(paymentMode);
       }
     };
     window.addEventListener("keydown", handler);
@@ -151,6 +157,18 @@ export default function POS() {
         </div>
 
         <div className="p-4 border-t border-[#27272A] space-y-3">
+          {locations.length > 1 && (
+            <select
+              value={selectedLocationId || ""}
+              onChange={(e) => setSelectedLocationId(e.target.value)}
+              data-testid="pos-location-select"
+              className="w-full h-9 px-3 rounded-md bg-[#18181B] border border-[#27272A] text-[13px] focus:border-blue-500 focus:outline-none"
+            >
+              {locations.map((loc) => (
+                <option key={loc.id} value={loc.id}>{loc.name}</option>
+              ))}
+            </select>
+          )}
           <input
             data-testid="pos-customer"
             value={customer} onChange={(e) => setCustomer(e.target.value)}
@@ -174,8 +192,8 @@ export default function POS() {
           </div>
 
           <button
-            onClick={() => checkout.mutate()}
-            disabled={cart.length === 0 || checkout.isPending || !locationId}
+            onClick={() => checkout.mutate(paymentMode)}
+            disabled={cart.length === 0 || checkout.isPending || !selectedLocationId}
             data-testid="pos-checkout-btn"
             className="w-full h-11 rounded-md bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white font-medium flex items-center justify-center gap-2"
           >
@@ -193,11 +211,10 @@ export default function POS() {
                 notes: { source: "pos" },
               });
               if (res.paid) {
-                setPaymentMode("razorpay");
-                setTimeout(() => checkout.mutate(), 100);
+                checkout.mutate("razorpay");
               }
             }}
-            disabled={cart.length === 0 || !locationId}
+            disabled={cart.length === 0 || !selectedLocationId}
             data-testid="pos-razorpay-btn"
             className="w-full h-10 rounded-md bg-[#18181B] border border-[#27272A] hover:border-blue-500/40 disabled:opacity-50 text-zinc-100 font-medium flex items-center justify-center gap-2 text-[13px] transition"
           >

@@ -9,13 +9,52 @@ from db import db
 from auth import get_current, AuthContext
 from models import NLQIn
 
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+from openai import AsyncOpenAI, RateLimitError, AuthenticationError
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
 EMERGENT_LLM_KEY = os.environ["EMERGENT_LLM_KEY"]
-LLM_PROVIDER = "openai"
-LLM_MODEL = "gpt-5.2"
+LLM_MODEL = os.environ.get("LLM_MODEL", "gpt-4o-mini")
+LLM_BASE_URL = os.environ.get("LLM_BASE_URL", None)
+
+# Max tokens per request to stay within buildathon limits
+MAX_TOKENS = 1000
+
+# Shim: wraps AsyncOpenAI so existing call-sites work unchanged
+class UserMessage:
+    def __init__(self, text: str):
+        self.text = text
+
+class LlmChat:
+    def __init__(self, api_key: str, session_id: str = "", system_message: str = ""):
+        kwargs = {"api_key": api_key}
+        if LLM_BASE_URL:
+            kwargs["base_url"] = LLM_BASE_URL
+        self._client = AsyncOpenAI(**kwargs)
+        self._system = system_message
+        self._model = LLM_MODEL
+
+    def with_model(self, provider: str, model: str) -> "LlmChat":
+        return self
+
+    async def send_message(self, msg: UserMessage) -> str:
+        messages = []
+        if self._system:
+            messages.append({"role": "system", "content": self._system})
+        messages.append({"role": "user", "content": msg.text})
+        try:
+            resp = await self._client.chat.completions.create(
+                model=self._model,
+                messages=messages,
+                max_tokens=MAX_TOKENS,
+            )
+            return resp.choices[0].message.content or ""
+        except RateLimitError:
+            raise HTTPException(429, "AI rate limit reached. Please wait a moment and try again.")
+        except AuthenticationError:
+            raise HTTPException(401, "AI service authentication failed. Check API key configuration.")
+        except Exception as e:
+            raise HTTPException(500, f"AI service error: {str(e)[:200]}")
 
 SCHEMA_DESCRIPTION = """
 You are a MongoDB aggregation query generator for a multi-tenant ERP.
@@ -78,7 +117,7 @@ async def nlq(inp: NLQIn, ctx: AuthContext = Depends(get_current)):
         api_key=EMERGENT_LLM_KEY,
         session_id=f"nlq-{ctx.tenant_id}-{ctx.user_id}",
         system_message=system,
-    ).with_model(LLM_PROVIDER, LLM_MODEL)
+    ).with_model("openai", LLM_MODEL)
 
     try:
         resp = await chat.send_message(UserMessage(text=inp.question))
@@ -194,7 +233,7 @@ async def insights(ctx: AuthContext = Depends(get_current)):
         api_key=EMERGENT_LLM_KEY,
         session_id=f"insights-{ctx.tenant_id}",
         system_message="You are an ERP business analyst. Reply in 3-4 short bullet points with actionable insights. No preamble.",
-    ).with_model(LLM_PROVIDER, LLM_MODEL)
+    ).with_model("openai", LLM_MODEL)
 
     try:
         resp = await chat.send_message(UserMessage(text=context))

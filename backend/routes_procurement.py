@@ -1,4 +1,5 @@
 """Suppliers, Purchase Orders, GRN."""
+import copy
 from fastapi import APIRouter, Depends, HTTPException
 from db import db, scope
 from auth import get_current, AuthContext, require_roles
@@ -62,7 +63,7 @@ async def receive_grn(inp: GRNIn, ctx: AuthContext = Depends(require_roles("owne
     if not po:
         raise HTTPException(404, "PO not found")
 
-    lines = po["lines"]
+    lines = copy.deepcopy(po["lines"])
     lookup = {l["product_id"]: l for l in lines}
     for gline in inp.lines:
         base = lookup.get(gline.product_id)
@@ -74,8 +75,13 @@ async def receive_grn(inp: GRNIn, ctx: AuthContext = Depends(require_roles("owne
             ctx.tenant_id, gline.product_id, po["location_id"], abs(float(gline.qty)),
             "purchase", po["id"], f"GRN for {po['po_no']}", unit_cost=gline.cost,
         )
-        # update product avg cost
-        await db.products.update_one({"tenant_id": ctx.tenant_id, "id": gline.product_id}, {"$set": {"cost": gline.cost}})
+        # update product avg cost using weighted average
+        lvl_doc = await db.stock_levels.find_one({"tenant_id": ctx.tenant_id, "product_id": gline.product_id, "location_id": po["location_id"]})
+        prev_qty = lvl_doc.get("qty", 0) if lvl_doc else 0
+        prev_avg = lvl_doc.get("avg_cost", 0) if lvl_doc else 0
+        total_qty = prev_qty + gline.qty
+        new_avg_cost = ((prev_qty * prev_avg) + (gline.qty * gline.cost)) / total_qty if total_qty else gline.cost
+        await db.products.update_one({"tenant_id": ctx.tenant_id, "id": gline.product_id}, {"$set": {"cost": round(new_avg_cost, 4)}})
         # batch
         if gline.batch_no or gline.expiry_date:
             b = Batch(

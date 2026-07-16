@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "mongodb": "^7.5.0",
     "render": "^0.1.4"
   }
 }

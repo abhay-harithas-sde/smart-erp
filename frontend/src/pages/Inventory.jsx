@@ -5,6 +5,7 @@ import { fmtCurrency, fmtNumber } from "../lib/fmt";
 import { Plus, Search, AlertTriangle, X, Upload, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogTitle } from "../components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "../components/ui/alert-dialog";
 import { uploadImageSigned } from "../lib/upload";
 
 const emptyForm = { sku: "", barcode: "", name: "", category: "", unit: "pcs", tax_rate: 18, price: 0, cost: 0, reorder_level: 10, lead_time_days: 7, track_batch: false, image_url: "" };
@@ -15,6 +16,7 @@ export default function Inventory() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyForm);
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
   const { data: products = [], isLoading } = useQuery({ queryKey: ["products", q], queryFn: async () => (await api.get(`/inventory/products${q ? `?q=${encodeURIComponent(q)}` : ""}`)).data });
   const { data: alerts } = useQuery({ queryKey: ["alerts"], queryFn: async () => (await api.get("/inventory/alerts")).data });
@@ -113,7 +115,7 @@ export default function Inventory() {
                      : <span className="inline-block px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 text-[10px] uppercase tracking-wider">OK</span>}
                   </td>
                   <td className="px-3 py-2 text-right">
-                    <button onClick={(e) => { e.stopPropagation(); if (window.confirm(`Delete ${p.name}?`)) del.mutate(p.id); }} data-testid={`delete-${p.sku}`} className="text-zinc-600 hover:text-red-400 p-1"><X className="w-3.5 h-3.5" /></button>
+                    <button onClick={(e) => { e.stopPropagation(); setDeleteTarget({ id: p.id, name: p.name }); }} data-testid={`delete-${p.sku}`} className="text-zinc-600 hover:text-red-400 p-1"><X className="w-3.5 h-3.5" /></button>
                   </td>
                 </tr>
               );
@@ -149,6 +151,21 @@ export default function Inventory() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+        <AlertDialogContent className="bg-[#0C0C0F] border-[#27272A]">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete product</AlertDialogTitle>
+            <AlertDialogDescription className="text-zinc-400">
+              Are you sure you want to delete <span className="text-zinc-200 font-medium">{deleteTarget?.name}</span>? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="bg-[#18181B] border-[#27272A] text-zinc-300 hover:bg-[#27272A]" onClick={() => setDeleteTarget(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction className="bg-red-500 hover:bg-red-600 text-white" onClick={() => { del.mutate(deleteTarget.id); setDeleteTarget(null); }}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

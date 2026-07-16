@@ -43,8 +43,8 @@ export default function Layout() {
       {/* Sidebar */}
       <aside className="w-60 border-r border-[#27272A] flex flex-col shrink-0" data-testid="sidebar">
         <div className="h-14 px-5 flex items-center gap-2 border-b border-[#27272A]">
-          <div className="w-7 h-7 rounded-md bg-blue-500 flex items-center justify-center font-display font-bold text-white">A</div>
-          <div className="font-display font-semibold tracking-tight text-[15px]">ATH<span className="text-blue-400">.</span></div>
+          <div className="w-7 h-7 rounded-md bg-blue-500 flex items-center justify-center font-display font-bold text-white">S</div>
+          <div className="font-display font-semibold tracking-tight text-[15px]">Smart<span className="text-blue-400"> Ledger</span></div>
         </div>
 
         <nav className="flex-1 py-3 px-2 space-y-0.5" data-testid="sidebar-nav">

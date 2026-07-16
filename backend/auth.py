@@ -1,4 +1,4 @@
-"""JWT auth + RBAC for ATH ERP."""
+"""JWT auth + RBAC for Smart Ledger."""
 import os
 import jwt
 import bcrypt

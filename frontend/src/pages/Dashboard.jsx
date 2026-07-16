@@ -51,6 +51,7 @@ function SpeakButton({ text }) {
       if (audioRef.current) {
         audioRef.current.src = url;
         await audioRef.current.play();
+        audioRef.current.addEventListener("ended", () => URL.revokeObjectURL(url), { once: true });
       }
     } catch (e) {
       toast.error(e.message.slice(0, 200));

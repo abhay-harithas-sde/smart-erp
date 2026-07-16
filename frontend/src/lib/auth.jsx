@@ -10,7 +10,7 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     // Skip /auth/me check if returning from OAuth callback — AuthCallback handles it
-    if (window.location.hash?.includes("session_id=")) { setLoading(false); return; }
+    if (window.location.hash?.startsWith("#session_id=")) { setLoading(false); return; }
     const token = localStorage.getItem("ath_token");
     if (!token) { setLoading(false); return; }
     api.get("/auth/me").then((r) => {
@@ -22,10 +22,16 @@ export function AuthProvider({ children }) {
   }, []);
 
   const refresh = async () => {
-    const r = await api.get("/auth/me");
-    setUser(r.data.user);
-    setTenant(r.data.tenant);
-    return r.data;
+    try {
+      const r = await api.get("/auth/me");
+      setUser(r.data.user);
+      setTenant(r.data.tenant);
+      return r.data;
+    } catch {
+      localStorage.removeItem("ath_token");
+      setUser(null);
+      setTenant(null);
+    }
   };
 
   const login = async (email, password) => {

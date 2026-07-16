@@ -7,8 +7,8 @@ import { Loader2 } from "lucide-react";
 export default function Login() {
   const nav = useNavigate();
   const { login } = useAuth();
-  const [email, setEmail] = useState("owner@demo.ath");
-  const [password, setPassword] = useState("demo1234");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
   const submit = async (e) => {
@@ -112,9 +112,7 @@ export default function Login() {
             <Link to="/signup" data-testid="link-signup" className="text-blue-400 hover:text-blue-300">Create one</Link>
           </div>
 
-          <div className="mt-8 p-3 rounded-md bg-[#18181B] border border-[#27272A] text-[11px] text-zinc-500 leading-relaxed">
-            <span className="text-zinc-400 font-medium">Demo:</span> owner@demo.ath / demo1234
-          </div>
+
         </form>
       </div>
     </div>

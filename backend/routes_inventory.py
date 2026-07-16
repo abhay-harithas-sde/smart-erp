@@ -133,8 +133,12 @@ async def alerts(ctx: AuthContext = Depends(get_current)):
 async def _apply_movement(tenant_id: str, product_id: str, location_id: str, qty: float, kind: str, ref_id: str, note: str = "", unit_cost: float = 0):
     """Update stock_levels + write stock_movement. qty is signed."""
     lvl = await db.stock_levels.find_one({"tenant_id": tenant_id, "product_id": product_id, "location_id": location_id})
-    new_qty = (lvl.get("qty", 0) if lvl else 0) + qty
+    current_qty = lvl.get("qty", 0) if lvl else 0
+    new_qty = current_qty + qty
+    if new_qty < 0:
+        raise HTTPException(400, f"Insufficient stock: current {current_qty}, requested {abs(qty)}")
     new_avg = lvl.get("avg_cost", 0) if lvl else 0
+
     if qty > 0 and unit_cost > 0:
         # weighted average
         prev_qty = lvl.get("qty", 0) if lvl else 0

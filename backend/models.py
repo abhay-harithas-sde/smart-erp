@@ -1,4 +1,4 @@
-"""Pydantic models for ATH ERP - all documents include tenant_id for isolation."""
+"""Pydantic models for Smart Ledger - all documents include tenant_id for isolation."""
 from pydantic import BaseModel, Field, EmailStr, ConfigDict
 from typing import List, Optional, Literal
 from datetime import datetime, timezone

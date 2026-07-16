@@ -36,7 +36,7 @@ function AppRoutes() {
   // Synchronous check during render — MUST run BEFORE ProtectedRoute
   // to prevent race conditions on OAuth callback
   const location = useLocation();
-  if (location.hash?.includes("session_id=")) return <AuthCallback />;
+  if (location.hash?.startsWith("#session_id=")) return <AuthCallback />;
 
   return (
     <Routes>

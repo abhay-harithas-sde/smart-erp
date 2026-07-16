@@ -72,7 +72,11 @@ export default function Finance() {
           </div>
           <div className="flex justify-end gap-2 mt-4">
             <button onClick={() => setOpen(false)} className="h-9 px-3 rounded-md bg-[#18181B] border border-[#27272A] text-[13px]">Cancel</button>
-            <button onClick={() => save.mutate()} data-testid="exp-save-btn" className="h-9 px-4 rounded-md bg-blue-500 hover:bg-blue-600 text-[13px] font-medium">Save</button>
+            <button onClick={() => {
+              if (!form.category.trim()) { toast.error("Category is required"); return; }
+              if (form.amount <= 0) { toast.error("Amount must be greater than zero"); return; }
+              save.mutate();
+            }} data-testid="exp-save-btn" className="h-9 px-4 rounded-md bg-blue-500 hover:bg-blue-600 text-[13px] font-medium">Save</button>
           </div>
         </DialogContent>
       </Dialog>

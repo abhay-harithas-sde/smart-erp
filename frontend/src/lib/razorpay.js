@@ -15,7 +15,7 @@ export async function payWithRazorpay({ amountRupees, receipt, prefill = {}, not
     const options = {
       key: key_id,
       amount, currency, order_id,
-      name: "ATH ERP",
+      name: "Smart Ledger",
       description: receipt || "POS payment",
       prefill,
       notes,

@@ -42,4 +42,4 @@ Production-ready multi-tenant SaaS ERP for SMEs (retail, pharmacy, distributors)
 - Double-entry accounting
 
 ## Credentials
-See `/app/memory/test_credentials.md`. Demo: `owner@demo.ath` / `demo1234`.
+See `/app/memory/test_credentials.md` for integration notes.

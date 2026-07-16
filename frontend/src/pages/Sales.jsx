@@ -5,10 +5,12 @@ import { fmtCurrency, fmtDateTime } from "../lib/fmt";
 import { toast } from "sonner";
 import { RotateCcw, MessageCircle, Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "../components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "../components/ui/alert-dialog";
 
 export default function Sales() {
   const qc = useQueryClient();
   const [waSale, setWaSale] = useState(null);
+  const [refundTarget, setRefundTarget] = useState(null);
 
   const { data: sales = [], isLoading } = useQuery({ queryKey: ["sales"], queryFn: async () => (await api.get("/pos/sales?limit=200")).data });
 
@@ -64,7 +66,7 @@ export default function Sales() {
                       <MessageCircle className="w-3.5 h-3.5" />
                     </button>
                     {s.status !== "refunded" && (
-                      <button onClick={() => window.confirm(`Refund ${s.invoice_no}?`) && refund.mutate(s.id)} data-testid={`refund-${s.invoice_no}`} title="Refund" className="text-zinc-600 hover:text-red-400 p-1">
+                      <button onClick={() => setRefundTarget({ id: s.id, invoice_no: s.invoice_no })} data-testid={`refund-${s.invoice_no}`} title="Refund" className="text-zinc-600 hover:text-red-400 p-1">
                         <RotateCcw className="w-3.5 h-3.5" />
                       </button>
                     )}
@@ -77,6 +79,21 @@ export default function Sales() {
       </div>
 
       {waSale && <WhatsAppInvoiceDialog sale={waSale} onClose={() => setWaSale(null)} />}
+
+      <AlertDialog open={!!refundTarget} onOpenChange={(open) => { if (!open) setRefundTarget(null); }}>
+        <AlertDialogContent className="bg-[#0C0C0F] border-[#27272A]">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Refund sale</AlertDialogTitle>
+            <AlertDialogDescription className="text-zinc-400">
+              Are you sure you want to refund <span className="text-zinc-200 font-medium">{refundTarget?.invoice_no}</span>? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="bg-[#18181B] border-[#27272A] text-zinc-300 hover:bg-[#27272A]" onClick={() => setRefundTarget(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction className="bg-red-500 hover:bg-red-600 text-white" onClick={() => { refund.mutate(refundTarget.id); setRefundTarget(null); }}>Refund</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
