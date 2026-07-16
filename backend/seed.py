@@ -6,8 +6,8 @@ from auth import hash_password
 from models import Tenant, User, Location, Product, Supplier, StockLevel, StockMovement, Sale, PurchaseOrder, now_iso, gen_id
 
 
-DEMO_EMAIL = ""
-DEMO_PASSWORD = ""
+DEMO_EMAIL = "demo@smarterp.com"
+DEMO_PASSWORD = "demo1234"
 
 
 async def seed_demo():
@@ -24,7 +24,7 @@ async def seed_demo():
         password_hash=hash_password(DEMO_PASSWORD),
     )
     cashier = User(
-        tenant_id=tid, email="", name="Cashier Priya", role="cashier",
+        tenant_id=tid, email="cashier@smarterp.com", name="Cashier Priya", role="cashier",
         password_hash=hash_password(DEMO_PASSWORD),
     )
     await db.users.insert_many([owner.model_dump(), cashier.model_dump()])
