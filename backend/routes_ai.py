@@ -42,8 +42,8 @@ async def _call_gemini(system: str, user: str) -> str:
         except Exception as e:
             last_err = e
             err_str = str(e)
-            # quota exhausted or model not found — try next
-            if "429" in err_str or "404" in err_str or "quota" in err_str.lower():
+            # quota exhausted, model not found, or key suspended — try next
+            if "429" in err_str or "404" in err_str or "403" in err_str or "quota" in err_str.lower() or "suspended" in err_str.lower():
                 continue
             # any other error — raise immediately
             raise HTTPException(500, f"AI service error: {err_str[:300]}")
