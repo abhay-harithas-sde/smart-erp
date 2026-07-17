@@ -5,10 +5,27 @@ import { fmtDateTime } from "../lib/fmt";
 import { toast } from "sonner";
 import { MessageCircle, Send, Phone, AlertTriangle, BarChart3, Loader2 } from "lucide-react";
 
+// Auto-format to E.164: strip spaces/dashes, add +91 if bare 10-digit Indian number
+function toE164(raw) {
+  let n = raw.trim().replace(/[\s\-().]/g, "");
+  if (!n) return n;
+  if (!n.startsWith("+")) {
+    // bare 10-digit → assume India +91
+    if (/^\d{10}$/.test(n)) n = "+91" + n;
+    // bare number with country code digits but no + → add +
+    else if (/^\d{11,15}$/.test(n)) n = "+" + n;
+  }
+  return n;
+}
+
 export default function Notifications() {
   const qc = useQueryClient();
   const [phone, setPhone] = useState("");
   const [body, setBody] = useState("");
+
+  // Display raw input, format on send
+  const formattedPhone = toE164(phone);
+  const phoneValid = /^\+\d{8,15}$/.test(formattedPhone);
 
   React.useEffect(() => { document.title = "Notifications — Smart Ledger"; }, []);
 
@@ -24,19 +41,19 @@ export default function Notifications() {
   const onError = (e) => toast.error(e?.response?.data?.detail || "Failed");
 
   const smsMut = useMutation({
-    mutationFn: async () => (await api.post("/notify/sms", { to: phone, body })).data,
+    mutationFn: async () => (await api.post("/notify/sms", { to: formattedPhone, body })).data,
     onSuccess, onError,
   });
   const waMut = useMutation({
-    mutationFn: async () => (await api.post("/notify/whatsapp", { to: phone, body })).data,
+    mutationFn: async () => (await api.post("/notify/whatsapp/freeform", { to: formattedPhone, body })).data,
     onSuccess, onError,
   });
   const lowMut = useMutation({
-    mutationFn: async () => (await api.post("/notify/low-stock-digest", { to: phone, body: "" })).data,
+    mutationFn: async () => (await api.post("/notify/low-stock-alert", { to: formattedPhone })).data,
     onSuccess, onError,
   });
   const pnlMut = useMutation({
-    mutationFn: async () => (await api.post("/notify/daily-pnl", { to: phone, body: "" })).data,
+    mutationFn: async () => (await api.post("/notify/daily-summary", { to: formattedPhone })).data,
     onSuccess, onError,
   });
 
@@ -54,15 +71,24 @@ export default function Notifications() {
         {/* Composer */}
         <div className="surface rounded-md p-5 space-y-4">
           <div>
-            <label className="text-[10px] uppercase tracking-widest text-zinc-500 mb-1.5 block">Recipient (E.164)</label>
+            <label className="text-[10px] uppercase tracking-widest text-zinc-500 mb-1.5 block">Recipient phone number</label>
             <input
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
-              placeholder="+919876543210"
+              placeholder="9876543210  or  +919876543210"
               data-testid="notify-phone"
-              className="w-full h-10 px-3 rounded-md bg-[#18181B] border border-[#27272A] focus:border-blue-500 focus:outline-none text-sm font-mono"
+              className={`w-full h-10 px-3 rounded-md bg-[#18181B] border focus:outline-none text-sm font-mono transition ${
+                phone && !phoneValid ? "border-red-500/50 focus:border-red-500" : "border-[#27272A] focus:border-blue-500"
+              }`}
             />
-            <div className="text-[10px] text-zinc-600 mt-1">Include country code, no spaces. WhatsApp sandbox requires the number to be joined first.</div>
+            <div className="flex items-center justify-between mt-1">
+              <div className="text-[10px] text-zinc-600">10-digit numbers auto-get +91. WhatsApp requires joining sandbox first.</div>
+              {phone && (
+                <div className={`text-[10px] font-mono ${phoneValid ? "text-emerald-400" : "text-red-400"}`}>
+                  {phoneValid ? `✓ ${formattedPhone}` : "Invalid format"}
+                </div>
+              )}
+            </div>
           </div>
 
           <div>
@@ -80,7 +106,7 @@ export default function Notifications() {
           <div className="grid grid-cols-2 gap-2">
             <button
               onClick={() => smsMut.mutate()}
-              disabled={!phone || !body || anyPending}
+              disabled={!phoneValid || !body || anyPending}
               data-testid="send-sms-btn"
               className="h-10 rounded-md bg-[#18181B] border border-[#27272A] hover:border-blue-500/40 disabled:opacity-50 flex items-center justify-center gap-2 text-[13px] font-medium"
             >
@@ -89,7 +115,7 @@ export default function Notifications() {
             </button>
             <button
               onClick={() => waMut.mutate()}
-              disabled={!phone || !body || anyPending}
+              disabled={!phoneValid || !body || anyPending}
               data-testid="send-wa-btn"
               className="h-10 rounded-md bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white flex items-center justify-center gap-2 text-[13px] font-medium"
             >
@@ -105,7 +131,7 @@ export default function Notifications() {
 
           <button
             onClick={() => lowMut.mutate()}
-            disabled={!phone || anyPending}
+            disabled={!phoneValid || anyPending}
             data-testid="wa-lowstock-btn"
             className="w-full h-11 rounded-md bg-[#18181B] border border-[#27272A] hover:border-amber-500/40 disabled:opacity-50 flex items-center gap-3 px-4 text-left transition"
           >
@@ -119,7 +145,7 @@ export default function Notifications() {
 
           <button
             onClick={() => pnlMut.mutate()}
-            disabled={!phone || anyPending}
+            disabled={!phoneValid || anyPending}
             data-testid="wa-pnl-btn"
             className="w-full h-11 rounded-md bg-[#18181B] border border-[#27272A] hover:border-blue-500/40 disabled:opacity-50 flex items-center gap-3 px-4 text-left transition"
           >
