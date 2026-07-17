@@ -97,91 +97,118 @@ export default function NLQDialog({ open, onOpenChange }) {
               {result.explanation && (
                 <div className="text-[13px] text-zinc-400 mb-3 leading-relaxed">{result.explanation}</div>
               )}
-              <div className="flex items-center gap-2 mb-3 text-[11px] text-zinc-500">
-                {result.chart === "bar" ? <BarChart3 className="w-3 h-3" /> : result.chart === "line" ? <TrendingUp className="w-3 h-3" /> : result.chart === "pie" ? <PieChartIcon className="w-3 h-3" /> : <TableIcon className="w-3 h-3" />}
-                <span>{result.row_count} rows · {result.collection}</span>
-              </div>
 
-              {result.chart === "bar" && result.rows.length > 0 && columns.length >= 2 && (
-                <div className="h-64 mb-4">
-                  <ResponsiveContainer>
-                    <BarChart data={result.rows}>
-                      <CartesianGrid stroke="#27272A" vertical={false} />
-                      <XAxis dataKey={columns[0]} tick={{ fill: "#71717A", fontSize: 11 }} />
-                      <YAxis tick={{ fill: "#71717A", fontSize: 11 }} />
-                      <Tooltip contentStyle={{ background: "#18181B", border: "1px solid #27272A", borderRadius: 6 }} />
-                      <Bar dataKey={columns.find(c => typeof result.rows[0][c] === "number") || columns[1]}>
-                        {result.rows.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-
-              {result.chart === "line" && result.rows.length > 0 && columns.length >= 2 && (
-                <div className="h-64 mb-4">
-                  <ResponsiveContainer>
-                    <LineChart data={result.rows}>
-                      <CartesianGrid stroke="#27272A" vertical={false} />
-                      <XAxis dataKey={columns[0]} tick={{ fill: "#71717A", fontSize: 11 }} />
-                      <YAxis tick={{ fill: "#71717A", fontSize: 11 }} />
-                      <Tooltip contentStyle={{ background: "#18181B", border: "1px solid #27272A", borderRadius: 6 }} />
-                      <Line type="monotone" dataKey={columns.find(c => typeof result.rows[0][c] === "number") || columns[1]} stroke="#3B82F6" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-
-              {result.chart === "pie" && result.rows.length > 0 && columns.length >= 2 && (
-                <div className="h-64 mb-4">
-                  <ResponsiveContainer>
-                    <PieChart>
-                      <Pie
-                        data={result.rows}
-                        dataKey={columns.find(c => typeof result.rows[0][c] === "number") || columns[1]}
-                        nameKey={columns[0]}
-                        cx="50%" cy="50%"
-                        outerRadius={90} innerRadius={50}
-                        strokeWidth={2} stroke="#09090B"
-                      >
-                        {result.rows.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                      </Pie>
-                      <Tooltip contentStyle={{ background: "#18181B", border: "1px solid #27272A", borderRadius: 6 }} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="flex flex-wrap gap-2 mt-1 text-[11px]">
-                    {result.rows.map((row, i) => (
-                      <div key={i} className="flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-sm" style={{ background: COLORS[i % COLORS.length] }} />
-                        <span className="text-zinc-400">{String(row[columns[0]] ?? "")}</span>
-                      </div>
-                    ))}
+              {/* Irrelevant topic */}
+              {result.irrelevant && (
+                <div className="flex flex-col items-center justify-center py-10 text-center">
+                  <div className="text-3xl mb-3">🤔</div>
+                  <div className="text-[14px] font-medium text-zinc-300 mb-1">Topic not relevant</div>
+                  <div className="text-[12px] text-zinc-500 max-w-xs">
+                    I can only answer questions about your business data — sales, inventory, products, customers, suppliers, and finances.
                   </div>
                 </div>
               )}
 
-              <div className="border border-[#27272A] rounded-md overflow-hidden">
-                <table className="w-full text-[12px]">
-                  <thead className="bg-[#18181B] text-zinc-500 uppercase tracking-wider text-[10px]">
-                    <tr>
-                      {columns.map((c) => <th key={c} className="text-left px-3 py-2 font-medium">{c}</th>)}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#27272A]">
-                    {result.rows.slice(0, 50).map((row, i) => (
-                      <tr key={i} className="hover:bg-[#18181B]/50">
-                        {columns.map((c) => (
-                          <td key={c} className="px-3 py-2 tabular text-zinc-300">
-                            {typeof row[c] === "number"
-                              ? (c.match(/price|total|revenue|cost|amount|value/i) ? fmtCurrency(row[c]) : fmtNumber(row[c]))
-                              : (typeof row[c] === "object" ? JSON.stringify(row[c]) : String(row[c] ?? "—"))}
-                          </td>
+              {/* No results */}
+              {!result.irrelevant && result.row_count === 0 && (
+                <div className="flex flex-col items-center justify-center py-10 text-center">
+                  <div className="text-3xl mb-3">📭</div>
+                  <div className="text-[14px] font-medium text-zinc-300 mb-1">No data found</div>
+                  <div className="text-[12px] text-zinc-500 max-w-xs">
+                    No records matched your query for the selected time period or filters.
+                  </div>
+                </div>
+              )}
+
+              {!result.irrelevant && result.row_count > 0 && (
+                <>
+                  <div className="flex items-center gap-2 mb-3 text-[11px] text-zinc-500">
+                    {result.chart === "bar" ? <BarChart3 className="w-3 h-3" /> : result.chart === "line" ? <TrendingUp className="w-3 h-3" /> : result.chart === "pie" ? <PieChartIcon className="w-3 h-3" /> : <TableIcon className="w-3 h-3" />}
+                    <span>{result.row_count} rows · {result.collection}</span>
+                  </div>
+
+                  {result.chart === "bar" && result.rows.length > 0 && columns.length >= 2 && (
+                    <div className="h-64 mb-4">
+                      <ResponsiveContainer>
+                        <BarChart data={result.rows}>
+                          <CartesianGrid stroke="#27272A" vertical={false} />
+                          <XAxis dataKey={columns[0]} tick={{ fill: "#71717A", fontSize: 11 }} />
+                          <YAxis tick={{ fill: "#71717A", fontSize: 11 }} />
+                          <Tooltip contentStyle={{ background: "#18181B", border: "1px solid #27272A", borderRadius: 6 }} />
+                          <Bar dataKey={columns.find(c => typeof result.rows[0][c] === "number") || columns[1]}>
+                            {result.rows.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+
+                  {result.chart === "line" && result.rows.length > 0 && columns.length >= 2 && (
+                    <div className="h-64 mb-4">
+                      <ResponsiveContainer>
+                        <LineChart data={result.rows}>
+                          <CartesianGrid stroke="#27272A" vertical={false} />
+                          <XAxis dataKey={columns[0]} tick={{ fill: "#71717A", fontSize: 11 }} />
+                          <YAxis tick={{ fill: "#71717A", fontSize: 11 }} />
+                          <Tooltip contentStyle={{ background: "#18181B", border: "1px solid #27272A", borderRadius: 6 }} />
+                          <Line type="monotone" dataKey={columns.find(c => typeof result.rows[0][c] === "number") || columns[1]} stroke="#3B82F6" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+
+                  {result.chart === "pie" && result.rows.length > 0 && columns.length >= 2 && (
+                    <div className="h-64 mb-4">
+                      <ResponsiveContainer>
+                        <PieChart>
+                          <Pie
+                            data={result.rows}
+                            dataKey={columns.find(c => typeof result.rows[0][c] === "number") || columns[1]}
+                            nameKey={columns[0]}
+                            cx="50%" cy="50%"
+                            outerRadius={90} innerRadius={50}
+                            strokeWidth={2} stroke="#09090B"
+                          >
+                            {result.rows.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                          </Pie>
+                          <Tooltip contentStyle={{ background: "#18181B", border: "1px solid #27272A", borderRadius: 6 }} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                      <div className="flex flex-wrap gap-2 mt-1 text-[11px]">
+                        {result.rows.map((row, i) => (
+                          <div key={i} className="flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-sm" style={{ background: COLORS[i % COLORS.length] }} />
+                            <span className="text-zinc-400">{String(row[columns[0]] ?? "")}</span>
+                          </div>
                         ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="border border-[#27272A] rounded-md overflow-hidden">
+                    <table className="w-full text-[12px]">
+                      <thead className="bg-[#18181B] text-zinc-500 uppercase tracking-wider text-[10px]">
+                        <tr>
+                          {columns.map((c) => <th key={c} className="text-left px-3 py-2 font-medium">{c}</th>)}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#27272A]">
+                        {result.rows.slice(0, 50).map((row, i) => (
+                          <tr key={i} className="hover:bg-[#18181B]/50">
+                            {columns.map((c) => (
+                              <td key={c} className="px-3 py-2 tabular text-zinc-300">
+                                {typeof row[c] === "number"
+                                  ? (c.match(/price|total|revenue|cost|amount|value/i) ? fmtCurrency(row[c]) : fmtNumber(row[c]))
+                                  : (typeof row[c] === "object" ? JSON.stringify(row[c]) : String(row[c] ?? "—"))}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>

@@ -81,6 +81,10 @@ Date filtering rules (CRITICAL — created_at is stored as ISO string "YYYY-MM-D
 - "yesterday" → use one day before __TODAY__
 - Always use string comparison with $gte / $lte on created_at
 
+IMPORTANT: If the question is NOT related to business data (sales, inventory, products, stock,
+revenue, customers, suppliers, procurement, finance, expenses), respond with EXACTLY this JSON:
+{"irrelevant": true, "explanation": "This question is not related to your business data."}
+
 Rules:
 - Return STRICT JSON: {"collection": "<name>", "pipeline": [ ... ], "chart": "table|bar|line|pie", "explanation": "..."}
 - To sum sales totals use the "total" field directly. To sum line items, $unwind "lines" first.
@@ -144,6 +148,15 @@ async def nlq(inp: NLQIn, ctx: AuthContext = Depends(get_current)):
         parsed = _extract_json(raw)
     except Exception as e:
         raise HTTPException(500, f"NLQ generation failed: {e}")
+
+    # AI flagged the question as irrelevant to business data
+    if parsed.get("irrelevant"):
+        return {
+            "question": inp.question,
+            "irrelevant": True,
+            "explanation": parsed.get("explanation", "This question is not related to your business data."),
+            "rows": [], "row_count": 0, "chart": "table", "collection": "", "pipeline": [],
+        }
 
     collection_name = parsed.get("collection")
     pipeline = parsed.get("pipeline", [])
