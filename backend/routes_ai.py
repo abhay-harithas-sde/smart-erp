@@ -28,12 +28,26 @@ async def _call_gemini(system: str, user: str) -> str:
     if not GEMINI_API_KEY:
         raise HTTPException(503, "AI service unavailable — no valid API key configured")
     genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel(
-        model_name="gemini-2.0-flash",
-        system_instruction=system,
-    )
-    resp = model.generate_content(user)
-    return resp.text
+    # Try models in order until one works
+    models_to_try = ["gemini-2.0-flash-lite", "gemini-1.5-flash-latest", "gemini-1.0-pro"]
+    last_err = None
+    for model_name in models_to_try:
+        try:
+            model = genai.GenerativeModel(
+                model_name=model_name,
+                system_instruction=system,
+            )
+            resp = model.generate_content(user)
+            return resp.text
+        except Exception as e:
+            last_err = e
+            err_str = str(e)
+            # quota exhausted or model not found — try next
+            if "429" in err_str or "404" in err_str or "quota" in err_str.lower():
+                continue
+            # any other error — raise immediately
+            raise HTTPException(500, f"AI service error: {err_str[:300]}")
+    raise HTTPException(503, f"All AI models quota exhausted. Please try again later.")
 
 
 # Shim: wraps AsyncOpenAI so existing call-sites work unchanged
