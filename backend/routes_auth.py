@@ -2,6 +2,7 @@
 import httpx
 from fastapi import APIRouter, HTTPException, Depends, Header, Request
 from typing import Optional
+from pydantic import BaseModel, EmailStr
 from db import db, strip_mongo_id
 from auth import hash_password, verify_password, make_token, get_current, AuthContext, require_roles
 from models import Tenant, User, SignupIn, LoginIn, InviteIn, Location
@@ -173,3 +174,70 @@ async def invite(inp: InviteIn, request: Request, ctx: AuthContext = Depends(req
         "role": user.role,
         "email_sent": email_sent,
     }
+
+
+class TestEmailIn(BaseModel):
+    to: EmailStr
+
+
+@router.post("/test-email")
+async def test_email(inp: TestEmailIn, ctx: AuthContext = Depends(require_roles("owner"))):
+    """Send a test email to verify SMTP config. Owner-only."""
+    import os
+    smtp_host = os.environ.get("SMTP_HOST", "")
+    smtp_user = os.environ.get("SMTP_USER", "")
+    smtp_pass = os.environ.get("SMTP_PASS", "")
+    smtp_port = os.environ.get("SMTP_PORT", "587")
+
+    html = f"""
+<!DOCTYPE html>
+<html>
+<body style="font-family:Inter,sans-serif;background:#09090B;color:#FAFAFA;margin:0;padding:0;">
+  <div style="max-width:480px;margin:40px auto;background:#18181B;border:1px solid #27272A;border-radius:12px;overflow:hidden;">
+    <div style="background:#2563EB;padding:24px 32px;">
+      <div style="font-size:22px;font-weight:700;letter-spacing:-0.5px;">Smart Ledger</div>
+      <div style="font-size:13px;opacity:0.8;margin-top:4px;">Email configuration test</div>
+    </div>
+    <div style="padding:32px;">
+      <p style="margin:0 0 16px;font-size:15px;">✅ <strong>SMTP is working correctly.</strong></p>
+      <p style="margin:0 0 24px;font-size:14px;color:#A1A1AA;">
+        Your Smart Ledger workspace email is configured and sending successfully.
+        Invite emails will be delivered to new team members.
+      </p>
+      <div style="background:#09090B;border:1px solid #27272A;border-radius:8px;padding:20px;margin-bottom:24px;">
+        <div style="margin-bottom:10px;">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#71717A;margin-bottom:4px;">SMTP Host</div>
+          <div style="font-family:monospace;font-size:13px;color:#FAFAFA;">{smtp_host}:{smtp_port}</div>
+        </div>
+        <div>
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#71717A;margin-bottom:4px;">Sending From</div>
+          <div style="font-family:monospace;font-size:13px;color:#FAFAFA;">{smtp_user}</div>
+        </div>
+      </div>
+      <p style="margin:0;font-size:12px;color:#52525B;">This is an automated test from Smart Ledger.</p>
+    </div>
+  </div>
+</body>
+</html>
+"""
+    plain = (
+        "SMTP Test — Smart Ledger\n\n"
+        "Your email configuration is working correctly.\n"
+        f"SMTP Host: {smtp_host}:{smtp_port}\n"
+        f"Sending from: {smtp_user}\n"
+    )
+
+    sent = await send_email(
+        to=inp.to,
+        subject="✅ Smart Ledger — Email test successful",
+        html=html,
+        text=plain,
+    )
+
+    if not sent:
+        raise HTTPException(
+            500,
+            detail=f"Email failed. Check SMTP config: host={smtp_host}, user={smtp_user}, pass={'set' if smtp_pass else 'MISSING'}",
+        )
+
+    return {"success": True, "message": f"Test email sent to {inp.to}"}

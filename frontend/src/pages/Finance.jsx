@@ -49,7 +49,7 @@ export default function Finance() {
         <Metric label="COGS" value={pnl?.cogs || 0} />
         <Metric label="Gross profit" value={pnl?.gross_profit || 0} tone="good" />
         <Metric label="Expenses" value={pnl?.expenses || 0} tone="bad" />
-        <Metric label="Net profit" value={pnl?.net_profit || 0} tone={pnl?.net_profit >= 0 ? "good" : "bad"} />
+        <Metric label="Net profit" value={pnl?.net_profit || 0} tone={pnl == null ? "default" : pnl.net_profit >= 0 ? "good" : "bad"} />
       </div>
 
       <div className="surface rounded-md overflow-hidden">

@@ -102,7 +102,7 @@ async def receive_grn(inp: GRNIn, ctx: AuthContext = Depends(require_roles("owne
             await db.batches.insert_one(b.model_dump())
 
     # status
-    all_received = all(l["received_qty"] >= l["qty"] for l in lines)
+    all_received = all((l.get("received_qty") or 0) >= l["qty"] for l in lines)
     status = "received" if all_received else "partial"
     await db.purchase_orders.update_one(
         {"tenant_id": ctx.tenant_id, "id": po["id"]},

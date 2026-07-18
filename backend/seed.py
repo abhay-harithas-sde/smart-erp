@@ -98,6 +98,16 @@ async def seed_demo():
             tax = 0.0
             for (p, _) in picks:
                 qty = random.randint(1, 3)
+                # Check current stock to avoid going negative
+                current_level = await db.stock_levels.find_one(
+                    {"tenant_id": tid, "product_id": p.id, "location_id": loc.id}
+                )
+                available = current_level.get("qty", 0) if current_level else 0
+                if available <= 0:
+                    continue  # skip this product if out of stock
+                qty = min(qty, int(available))
+                if qty <= 0:
+                    continue
                 line_sub = qty * p.price
                 line_tax = line_sub * p.tax_rate / 100
                 subtotal += line_sub
@@ -113,6 +123,9 @@ async def seed_demo():
                 )
                 mv = StockMovement(tenant_id=tid, product_id=p.id, location_id=loc.id, qty=-qty, kind="sale", unit_cost=p.cost, note=f"Sale INV-{invoice_seq:06d}", created_at=day.isoformat())
                 await db.stock_movements.insert_one(mv.model_dump())
+
+            if not lines:
+                continue  # skip orders with no saleable lines
 
             sale = Sale(
                 tenant_id=tid, invoice_no=f"INV-{invoice_seq:06d}", location_id=loc.id,

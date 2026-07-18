@@ -206,14 +206,18 @@ export default function POS() {
           <button
             onClick={async () => {
               if (cart.length === 0) return;
-              const res = await payWithRazorpay({
-                amountRupees: totals.total,
-                receipt: `POS-${Date.now()}`,
-                prefill: { name: customer || "Walk-in" },
-                notes: { source: "pos" },
-              });
-              if (res.paid) {
-                checkout.mutate("razorpay");
+              try {
+                const res = await payWithRazorpay({
+                  amountRupees: totals.total,
+                  receipt: `POS-${Date.now()}`,
+                  prefill: { name: customer || "Walk-in" },
+                  notes: { source: "pos" },
+                });
+                if (res.paid) {
+                  checkout.mutate("razorpay");
+                }
+              } catch (err) {
+                toast.error(err?.message || "Payment failed");
               }
             }}
             disabled={cart.length === 0 || !selectedLocationId}

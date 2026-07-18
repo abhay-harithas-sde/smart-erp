@@ -28,8 +28,6 @@ class UserMessage:
 
 class LlmChat:
     def __init__(self, api_key: str, session_id: str = "", system_message: str = ""):
-        if not GROQ_API_KEY:
-            raise HTTPException(503, "AI service unavailable — set GROQ_API_KEY in .env")
         self._client = AsyncOpenAI(api_key=GROQ_API_KEY, base_url=GROQ_BASE_URL)
         self._system = system_message
         self._model = LLM_MODEL
@@ -109,22 +107,33 @@ def _extract_json(text: str) -> dict:
 
 
 def _sanitize_pipeline(pipeline: list, tenant_id: str) -> list:
-    """Ensure tenant_id is enforced in the first $match; strip any writes/dangerous stages."""
+    """Ensure tenant_id is enforced in the first $match; strip any writes/dangerous stages.
+    Also removes the AI's own first $match so we inject a clean one, preventing duplicate
+    tenant_id $match stages.
+    """
     banned = {"$out", "$merge"}
     safe = []
+    stripped_first_match = False
     for stage in pipeline:
         if not isinstance(stage, dict):
             continue
         key = next(iter(stage.keys()), "")
         if key in banned:
             continue
+        # Remove the AI's first $match (it often re-emits the tenant_id match we prompted it
+        # to include) so we can inject our own authoritative one without duplication.
+        if key == "$match" and not stripped_first_match:
+            stripped_first_match = True
+            continue
         safe.append(stage)
-    # Always inject tenant_id match upfront
+    # Always inject tenant_id match upfront — this is the authoritative security boundary
     return [{"$match": {"tenant_id": tenant_id}}] + safe
 
 
 @router.post("/nlq")
 async def nlq(inp: NLQIn, ctx: AuthContext = Depends(get_current)):
+    if not GROQ_API_KEY:
+        raise HTTPException(503, "AI service unavailable — set GROQ_API_KEY in .env")
     now = datetime.now(timezone.utc)
     today = now.strftime("%Y-%m-%d")
     week_start = (now - timedelta(days=now.weekday())).strftime("%Y-%m-%d")
@@ -248,6 +257,8 @@ async def forecast(ctx: AuthContext = Depends(get_current)):
 @router.get("/insights")
 async def insights(ctx: AuthContext = Depends(get_current)):
     """Quick LLM-generated business narrative."""
+    if not GROQ_API_KEY:
+        return {"narrative": "AI insights unavailable — set GROQ_API_KEY in .env to enable."}
     # gather quick metrics
     sales = await db.sales.find({"tenant_id": ctx.tenant_id, "status": {"$ne": "refunded"}}, {"_id": 0}).sort("created_at", -1).limit(200).to_list(200)
     total_30d = sum(s.get("total", 0) for s in sales)

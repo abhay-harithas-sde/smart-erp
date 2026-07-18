@@ -3,10 +3,15 @@
 SMS  — works for verified numbers on trial accounts.
 WhatsApp — uses pre-approved Twilio Content Templates for business-initiated
            messages. Once the customer replies, free-form messages work for 24h.
+
+Rate limiting: Twilio free trial accounts are capped at 50 messages/day (error 63038).
+               We enforce a soft daily cap in MongoDB before calling Twilio so the
+               frontend gets a clear quota error instead of a raw Twilio exception.
 """
 import os
 import json
 import functools
+from datetime import datetime, timezone
 from twilio.rest import Client
 from twilio.base.exceptions import TwilioRestException
 from fastapi import APIRouter, Depends, HTTPException
@@ -19,9 +24,15 @@ from models import now_iso
 router = APIRouter(prefix="/notify", tags=["notify"])
 
 # ── Twilio error codes ────────────────────────────────────────────────────────
-_TRIAL_UNVERIFIED_CODE = 21608   # number not verified on trial account
-_TRIAL_REGION_CODE     = 21215   # region not enabled
-_SAME_FROM_TO_CODE     = 21266   # To == From
+_TRIAL_UNVERIFIED_CODE  = 21608   # number not verified on trial account
+_TRIAL_REGION_CODE      = 21215   # region not enabled
+_SAME_FROM_TO_CODE      = 21266   # To == From
+_DAILY_LIMIT_CODE       = 63038   # 50-message/day cap on trial accounts
+
+# ── Daily quota ───────────────────────────────────────────────────────────────
+# Twilio trial = 50/day hard cap. We enforce a slightly lower soft limit so we
+# still have headroom and avoid surprise 63038 errors mid-request.
+_DAILY_SOFT_LIMIT = int(os.environ.get("TWILIO_DAILY_LIMIT", "45"))
 
 # ── Pre-approved WhatsApp Content Template SIDs ───────────────────────────────
 # Add more from https://console.twilio.com/us1/develop/sms/content-template-builder
@@ -42,6 +53,20 @@ def _get_twilio_client():
 
 def _friendly_twilio_error(e: TwilioRestException) -> HTTPException:
     code = getattr(e, "code", None)
+    if code == _DAILY_LIMIT_CODE:
+        return HTTPException(
+            429,
+            detail={
+                "error": "twilio_daily_limit",
+                "message": (
+                    "Twilio account exceeded the 50 daily messages limit (error 63038). "
+                    "Upgrade your Twilio account at https://console.twilio.com to remove this cap, "
+                    "or wait until the limit resets at midnight UTC."
+                ),
+                "twilio_code": code,
+                "resets_at": f"{datetime.now(timezone.utc).strftime('%Y-%m-%d')}T23:59:59Z",
+            },
+        )
     if code == _TRIAL_UNVERIFIED_CODE:
         return HTTPException(
             400,
@@ -58,6 +83,39 @@ def _friendly_twilio_error(e: TwilioRestException) -> HTTPException:
     if code == _SAME_FROM_TO_CODE:
         return HTTPException(400, "The 'To' number cannot be the same as your Twilio sender number.")
     return HTTPException(400, f"Twilio error ({code}): {e.msg}")
+
+
+def _today_utc() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+async def _get_daily_count() -> int:
+    """Count messages sent today (Twilio account-level limit, not per-tenant)."""
+    today = _today_utc()
+    return await db.notifications.count_documents({
+        "sent_at": {"$gte": today},
+        "provider_sid": {"$exists": True},  # only actually-sent messages
+    })
+
+
+async def _check_quota():
+    """Raise HTTP 429 before calling Twilio if we're at or above the daily soft limit."""
+    count = await _get_daily_count()
+    if count >= _DAILY_SOFT_LIMIT:
+        raise HTTPException(
+            429,
+            detail={
+                "error": "twilio_daily_limit",
+                "message": (
+                    f"Daily message quota reached ({count}/{_DAILY_SOFT_LIMIT}). "
+                    "Twilio free trial accounts are limited to 50 messages/day. "
+                    "Upgrade at https://console.twilio.com or wait until midnight UTC."
+                ),
+                "sent_today": count,
+                "limit": _DAILY_SOFT_LIMIT,
+                "resets_at": f"{_today_utc()}T23:59:59Z",
+            },
+        )
 
 
 def _validate_e164(number: str):
@@ -138,12 +196,35 @@ class OrderNotifyIn(BaseModel):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# QUOTA ROUTE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/quota")
+async def get_quota(ctx: AuthContext = Depends(require_roles("owner", "manager"))):
+    """Return today's message usage vs the daily soft limit."""
+    sent_today = await _get_daily_count()
+    return {
+        "sent_today": sent_today,
+        "limit": _DAILY_SOFT_LIMIT,
+        "remaining": max(0, _DAILY_SOFT_LIMIT - sent_today),
+        "exhausted": sent_today >= _DAILY_SOFT_LIMIT,
+        "resets_at": f"{_today_utc()}T23:59:59Z",
+        "note": (
+            "Twilio free trial is limited to 50 messages/day. "
+            "Set TWILIO_DAILY_LIMIT env var to adjust the soft cap. "
+            "Upgrade at https://console.twilio.com to remove the limit."
+        ),
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # SMS ROUTES
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @router.post("/sms")
 async def send_sms(inp: SMSIn, ctx: AuthContext = Depends(require_roles("owner", "manager", "cashier"))):
     """Send a plain SMS to any verified E.164 number."""
+    await _check_quota()
     try:
         sid = _send_sms(inp.to, inp.body)
     except TwilioRestException as e:
@@ -158,6 +239,7 @@ async def send_sms(inp: SMSIn, ctx: AuthContext = Depends(require_roles("owner",
 @router.post("/low-stock-alert")
 async def send_low_stock_alert(inp: AlertIn, ctx: AuthContext = Depends(require_roles("owner", "manager"))):
     """Compose a low-stock digest and send via SMS."""
+    await _check_quota()
     products = await db.products.find({"tenant_id": ctx.tenant_id}, {"_id": 0}).to_list(2000)
     lows = []
     for p in products:
@@ -190,8 +272,8 @@ async def send_low_stock_alert(inp: AlertIn, ctx: AuthContext = Depends(require_
 @router.post("/daily-summary")
 async def send_daily_summary(inp: AlertIn, ctx: AuthContext = Depends(require_roles("owner"))):
     """Compose today's P&L summary and send via SMS."""
-    from datetime import datetime, timezone
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    await _check_quota()
+    today = _today_utc()
     sales = await db.sales.find(
         {"tenant_id": ctx.tenant_id, "created_at": {"$gte": today}, "status": {"$ne": "refunded"}},
         {"_id": 0}
@@ -221,6 +303,7 @@ async def send_daily_summary(inp: AlertIn, ctx: AuthContext = Depends(require_ro
 @router.post("/invoice")
 async def send_invoice_sms(inp: InvoiceSMSIn, ctx: AuthContext = Depends(require_roles("owner", "manager", "cashier"))):
     """Send a sale invoice summary via SMS."""
+    await _check_quota()
     sale = await db.sales.find_one({"tenant_id": ctx.tenant_id, "id": inp.sale_id}, {"_id": 0})
     if not sale:
         raise HTTPException(404, "Sale not found")
@@ -274,6 +357,7 @@ async def send_whatsapp_template(
     Example body:
         {"to": "+919611462389", "template": "appointment", "variables": {"1": "25 Jul", "2": "3:00 PM"}}
     """
+    await _check_quota()
     content_sid = _WA_TEMPLATES.get(inp.template)
     if not content_sid:
         available = list(_WA_TEMPLATES.keys())
@@ -309,6 +393,7 @@ async def send_whatsapp_order(
     Example body:
         {"to": "+919611462389", "date": "25 Jul 2026", "time": "3:00 PM"}
     """
+    await _check_quota()
     content_sid = _WA_TEMPLATES["order"]
     variables   = {"1": inp.date, "2": inp.time}
     try:
@@ -339,6 +424,7 @@ async def send_whatsapp_freeform(
     Only works within the 24-hour session window after the customer last replied.
     Use /whatsapp/template to start a new conversation.
     """
+    await _check_quota()
     try:
         sid = _send_whatsapp_freeform(inp.to, inp.body)
     except TwilioRestException as e:

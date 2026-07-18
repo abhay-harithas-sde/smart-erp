@@ -152,6 +152,14 @@ function PODialog({ onClose, onDone, suppliers, products, locations }) {
   const [lines, setLines] = useState([]);
   const [pick, setPick] = useState("");
 
+  // Sync initial selection when async data arrives after first render
+  React.useEffect(() => {
+    if (suppliers.length > 0 && !supplier) setSupplier(suppliers[0].id);
+  }, [suppliers]);
+  React.useEffect(() => {
+    if (locations.length > 0 && !location) setLocation(locations[0].id);
+  }, [locations]);
+
   const addLine = () => {
     const p = products.find(x => x.id === pick);
     if (!p) return;

@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "../lib/api";
 import { fmtDateTime } from "../lib/fmt";
 import { toast } from "sonner";
-import { MessageCircle, Send, Phone, AlertTriangle, BarChart3, Loader2 } from "lucide-react";
+import { MessageCircle, Send, Phone, AlertTriangle, BarChart3, Loader2, Gauge } from "lucide-react";
 
 // Auto-format to E.164: strip spaces/dashes, add +91 if bare 10-digit Indian number
 function toE164(raw) {
@@ -29,6 +29,12 @@ export default function Notifications() {
 
   React.useEffect(() => { document.title = "Notifications — Smart Ledger"; }, []);
 
+  const { data: quota } = useQuery({
+    queryKey: ["notify-quota"],
+    queryFn: async () => (await api.get("/notify/quota")).data,
+    refetchInterval: 60_000, // refresh every minute
+  });
+
   const { data: history = [], isLoading } = useQuery({
     queryKey: ["notifications"],
     queryFn: async () => (await api.get("/notify/history")).data,
@@ -37,8 +43,22 @@ export default function Notifications() {
   const onSuccess = (d) => {
     toast.success(`Sent (${d.sid?.slice(-8) || "ok"})`);
     qc.invalidateQueries({ queryKey: ["notifications"] });
+    qc.invalidateQueries({ queryKey: ["notify-quota"] });
   };
-  const onError = (e) => toast.error(e?.response?.data?.detail || "Failed");
+
+  // Extract a clean message from 429 or other Twilio errors
+  const onError = (e) => {
+    const detail = e?.response?.data?.detail;
+    if (e?.response?.status === 429) {
+      const msg = typeof detail === "object" ? detail.message : detail;
+      toast.error(msg || "Daily message limit reached. Try again tomorrow.");
+      qc.invalidateQueries({ queryKey: ["notify-quota"] });
+      return;
+    }
+    toast.error(typeof detail === "string" ? detail : detail?.message || "Failed to send");
+  };
+
+  const quotaExhausted = quota?.exhausted === true;
 
   const smsMut = useMutation({
     mutationFn: async () => (await api.post("/notify/sms", { to: formattedPhone, body })).data,
@@ -66,6 +86,32 @@ export default function Notifications() {
         <h1 className="font-display text-3xl font-semibold tracking-tight">Notifications</h1>
         <p className="text-sm text-zinc-500 mt-1">SMS & WhatsApp via Twilio · Business alerts on demand</p>
       </div>
+
+      {/* Daily quota banner */}
+      {quota && (
+        <div className={`flex items-center gap-3 px-4 py-3 rounded-md border text-[13px] ${
+          quotaExhausted
+            ? "bg-red-500/10 border-red-500/30 text-red-400"
+            : quota.remaining <= 5
+            ? "bg-amber-500/10 border-amber-500/30 text-amber-400"
+            : "bg-[#18181B] border-[#27272A] text-zinc-400"
+        }`}>
+          <Gauge className="w-4 h-4 shrink-0" />
+          <div className="flex-1">
+            {quotaExhausted
+              ? <>Daily limit reached ({quota.sent_today}/{quota.limit} messages). Resets at midnight UTC. <a href="https://console.twilio.com" target="_blank" rel="noreferrer" className="underline">Upgrade Twilio</a> to remove the cap.</>
+              : <><span className="font-medium">{quota.remaining}</span> of {quota.limit} messages remaining today (Twilio free trial limit).</>
+            }
+          </div>
+          {/* Mini progress bar */}
+          <div className="w-24 h-1.5 rounded-full bg-zinc-700 overflow-hidden shrink-0">
+            <div
+              className={`h-full rounded-full transition-all ${quotaExhausted ? "bg-red-500" : quota.remaining <= 5 ? "bg-amber-400" : "bg-blue-500"}`}
+              style={{ width: `${Math.min(100, (quota.sent_today / quota.limit) * 100)}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Composer */}
@@ -106,7 +152,7 @@ export default function Notifications() {
           <div className="grid grid-cols-2 gap-2">
             <button
               onClick={() => smsMut.mutate()}
-              disabled={!phoneValid || !body || anyPending}
+              disabled={!phoneValid || !body || anyPending || quotaExhausted}
               data-testid="send-sms-btn"
               className="h-10 rounded-md bg-[#18181B] border border-[#27272A] hover:border-blue-500/40 disabled:opacity-50 flex items-center justify-center gap-2 text-[13px] font-medium"
             >
@@ -115,7 +161,7 @@ export default function Notifications() {
             </button>
             <button
               onClick={() => waMut.mutate()}
-              disabled={!phoneValid || !body || anyPending}
+              disabled={!phoneValid || !body || anyPending || quotaExhausted}
               data-testid="send-wa-btn"
               className="h-10 rounded-md bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white flex items-center justify-center gap-2 text-[13px] font-medium"
             >
@@ -131,13 +177,13 @@ export default function Notifications() {
 
           <button
             onClick={() => lowMut.mutate()}
-            disabled={!phoneValid || anyPending}
+            disabled={!phoneValid || anyPending || quotaExhausted}
             data-testid="wa-lowstock-btn"
             className="w-full h-11 rounded-md bg-[#18181B] border border-[#27272A] hover:border-amber-500/40 disabled:opacity-50 flex items-center gap-3 px-4 text-left transition"
           >
             <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
             <div className="flex-1">
-              <div className="text-[13px] font-medium">Low-stock digest via WhatsApp</div>
+              <div className="text-[13px] font-medium">Low-stock digest via SMS</div>
               <div className="text-[11px] text-zinc-500">Auto-composes list of products below reorder level</div>
             </div>
             {lowMut.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
@@ -145,13 +191,13 @@ export default function Notifications() {
 
           <button
             onClick={() => pnlMut.mutate()}
-            disabled={!phoneValid || anyPending}
+            disabled={!phoneValid || anyPending || quotaExhausted}
             data-testid="wa-pnl-btn"
             className="w-full h-11 rounded-md bg-[#18181B] border border-[#27272A] hover:border-blue-500/40 disabled:opacity-50 flex items-center gap-3 px-4 text-left transition"
           >
             <BarChart3 className="w-4 h-4 text-blue-400 shrink-0" />
             <div className="flex-1">
-              <div className="text-[13px] font-medium">Today's P&L summary via WhatsApp</div>
+              <div className="text-[13px] font-medium">Today's P&L summary via SMS</div>
               <div className="text-[11px] text-zinc-500">Orders, revenue, and tax collected so far today</div>
             </div>
             {pnlMut.isPending && <Loader2 className="w-4 h-4 animate-spin" />}

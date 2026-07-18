@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { toast } from "sonner";
-import { Plus, Copy, CheckCheck, ExternalLink } from "lucide-react";
+import { Plus, Copy, CheckCheck, ExternalLink, Mail, Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "../components/ui/dialog";
 
 export default function Settings() {
@@ -12,6 +12,8 @@ export default function Settings() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ email: "", name: "", role: "cashier", password: "" });
   const [shareData, setShareData] = useState(null); // { email, password, name, role }
+  const [testEmailOpen, setTestEmailOpen] = useState(false);
+  const [testEmailAddr, setTestEmailAddr] = useState("");
 
   React.useEffect(() => { document.title = "Settings — Smart Ledger"; }, []);
 
@@ -39,6 +41,24 @@ export default function Settings() {
     onError: (e) => toast.error(e?.response?.data?.detail || "Failed"),
   });
 
+  const testEmail = useMutation({
+    mutationFn: async (to) => (await api.post("/auth/test-email", { to })).data,
+    onSuccess: (data) => {
+      toast.success(data.message);
+      setTestEmailOpen(false);
+      setTestEmailAddr("");
+    },
+    onError: (e) => {
+      const detail = e?.response?.data?.detail;
+      // Pydantic validation errors return detail as an array of objects
+      if (Array.isArray(detail)) {
+        toast.error(detail.map(d => d.msg || d.message || JSON.stringify(d)).join("; ") || "SMTP test failed — check backend logs");
+      } else {
+        toast.error(typeof detail === "string" ? detail : "SMTP test failed — check backend logs");
+      }
+    },
+  });
+
   return (
     <div className="p-6 space-y-4" data-testid="settings-page">
       <div>
@@ -60,9 +80,20 @@ export default function Settings() {
         <div className="px-4 py-3 border-b border-[#27272A] flex items-center justify-between">
           <h2 className="font-display text-sm font-medium">Team members</h2>
           {(user?.role === "owner" || user?.role === "manager") && (
-            <button onClick={() => setOpen(true)} data-testid="invite-btn" className="h-8 px-3 rounded-md bg-blue-500 hover:bg-blue-600 text-[12px] font-medium flex items-center gap-1.5">
-              <Plus className="w-3 h-3" /> Invite
-            </button>
+            <div className="flex items-center gap-2">
+              {user?.role === "owner" && (
+                <button
+                  onClick={() => setTestEmailOpen(true)}
+                  data-testid="test-email-btn"
+                  className="h-8 px-3 rounded-md bg-zinc-800 hover:bg-zinc-700 border border-[#27272A] text-[12px] font-medium flex items-center gap-1.5 text-zinc-300"
+                >
+                  <Mail className="w-3 h-3" /> Test email
+                </button>
+              )}
+              <button onClick={() => setOpen(true)} data-testid="invite-btn" className="h-8 px-3 rounded-md bg-blue-500 hover:bg-blue-600 text-[12px] font-medium flex items-center gap-1.5">
+                <Plus className="w-3 h-3" /> Invite
+              </button>
+            </div>
           )}
         </div>
         <table className="w-full text-[12px]">
@@ -106,6 +137,44 @@ export default function Settings() {
 
       {/* Share credentials dialog — shown after successful invite */}
       {shareData && <ShareCredentialsDialog data={shareData} onClose={() => { setShareData(null); qc.invalidateQueries({ queryKey: ["users"] }); }} />}
+
+      {/* Test email dialog */}
+      <Dialog open={testEmailOpen} onOpenChange={setTestEmailOpen}>
+        <DialogContent className="max-w-sm bg-[#0C0C0F] border-[#27272A]">
+          <DialogTitle className="font-display text-lg flex items-center gap-2">
+            <Mail className="w-4 h-4 text-blue-400" /> Test email config
+          </DialogTitle>
+          <p className="text-[12px] text-zinc-400 mt-1">
+            Send a test email to verify your SMTP settings are working correctly.
+          </p>
+          <div className="mt-3">
+            <input
+              data-testid="test-email-input"
+              placeholder="Send test to (your email)"
+              type="email"
+              value={testEmailAddr}
+              onChange={(e) => setTestEmailAddr(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && testEmailAddr && testEmail.mutate(testEmailAddr)}
+              className="w-full h-9 px-3 rounded-md bg-[#18181B] border border-[#27272A] text-[13px]"
+            />
+          </div>
+          <div className="flex justify-end gap-2 mt-4">
+            <button onClick={() => setTestEmailOpen(false)} className="h-9 px-3 rounded-md bg-[#18181B] border border-[#27272A] text-[13px]">Cancel</button>
+            <button
+              onClick={() => testEmail.mutate(testEmailAddr)}
+              disabled={!testEmailAddr || testEmail.isPending}
+              data-testid="test-email-send-btn"
+              className="h-9 px-4 rounded-md bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-[13px] font-medium flex items-center gap-2"
+            >
+              {testEmail.isPending ? (
+                <><Loader2 className="w-3 h-3 animate-spin" /> Sending…</>
+              ) : (
+                <><Mail className="w-3 h-3" /> Send test</>
+              )}
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

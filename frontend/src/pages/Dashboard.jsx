@@ -1,6 +1,6 @@
 import React, { useState, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import api, { API } from "../lib/api";
+import api from "../lib/api";
 import { fmtCurrency, fmtNumber } from "../lib/fmt";
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { TrendingUp, Package, AlertTriangle, Clock, Truck, IndianRupee, Sparkles, Volume2, Loader2 } from "lucide-react";
@@ -32,21 +32,41 @@ function SpeakButton({ text }) {
   const [loading, setLoading] = useState(false);
   const audioRef = useRef(null);
 
+  /** Browser Web Speech API fallback — works on all modern browsers, zero cost. */
+  const speakBrowser = (txt) => {
+    if (!("speechSynthesis" in window)) {
+      toast.error("Text-to-speech not supported in this browser.");
+      return;
+    }
+    window.speechSynthesis.cancel(); // stop any current speech
+    const utterance = new SpeechSynthesisUtterance(txt);
+    utterance.rate = 1;
+    utterance.pitch = 1;
+    // Prefer an English voice if available
+    const voices = window.speechSynthesis.getVoices();
+    const enVoice = voices.find((v) => v.lang.startsWith("en"));
+    if (enVoice) utterance.voice = enVoice;
+    window.speechSynthesis.speak(utterance);
+  };
+
   const speak = async () => {
     if (!text) return;
     setLoading(true);
     try {
-      const token = localStorage.getItem("ath_token");
-      const resp = await fetch(`${API}/tts/speak`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ text }),
-      });
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({}));
-        throw new Error(err.detail || `TTS ${resp.status}`);
+      const resp = await api.post("/tts/speak", { text }, { responseType: "blob" });
+
+      if (resp.status === 402) {
+        // ElevenLabs free-tier limitation — fall back to browser TTS silently
+        const errData = await resp.data.text().then(t => JSON.parse(t)).catch(() => ({}));
+        const detail = errData?.detail ?? errData;
+        if (detail?.use_browser_tts) {
+          speakBrowser(text);
+          return;
+        }
+        throw new Error(detail?.message || "ElevenLabs free tier limitation.");
       }
-      const blob = await resp.blob();
+
+      const blob = resp.data;
       const url = URL.createObjectURL(blob);
       if (audioRef.current) {
         audioRef.current.src = url;
@@ -54,8 +74,13 @@ function SpeakButton({ text }) {
         audioRef.current.addEventListener("ended", () => URL.revokeObjectURL(url), { once: true });
       }
     } catch (e) {
-      toast.error(e.message.slice(0, 200));
-    } finally { setLoading(false); }
+      // If anything goes wrong, still try browser TTS so the user gets audio
+      if (e?.name !== "AbortError") {
+        speakBrowser(text);
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

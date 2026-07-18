@@ -103,21 +103,29 @@ export default function Sales() {
 function WhatsAppInvoiceDialog({ sale, onClose }) {
   const [phone, setPhone] = useState("");
   const send = useMutation({
-    mutationFn: async () => (await api.post("/notify/whatsapp/invoice", { sale_id: sale.id, to: phone })).data,
+    mutationFn: async () => (await api.post("/notify/invoice", { sale_id: sale.id, to: phone })).data,
     onSuccess: () => { toast.success(`Invoice ${sale.invoice_no} sent to ${phone}`); onClose(); },
-    onError: (e) => toast.error(e?.response?.data?.detail || "Failed"),
+    onError: (e) => {
+      const detail = e?.response?.data?.detail;
+      if (e?.response?.status === 429) {
+        const msg = typeof detail === "object" ? detail.message : detail;
+        toast.error(msg || "Daily message limit reached. Try again tomorrow.");
+        return;
+      }
+      toast.error(typeof detail === "string" ? detail : detail?.message || "Failed to send");
+    },
   });
 
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-md bg-[#0C0C0F] border-[#27272A]" data-testid="wa-invoice-dialog">
-        <DialogTitle className="font-display text-lg">Send invoice via WhatsApp</DialogTitle>
+        <DialogTitle className="font-display text-lg">Send invoice via SMS</DialogTitle>
         <div className="mt-2 text-[12px] text-zinc-500">
           Invoice <span className="font-mono text-zinc-300">{sale.invoice_no}</span> · Total <span className="tabular text-zinc-300">{fmtCurrency(sale.total)}</span>
         </div>
 
         <div className="mt-4">
-          <label className="text-[10px] uppercase tracking-widest text-zinc-500 mb-1.5 block">Customer WhatsApp number (E.164)</label>
+          <label className="text-[10px] uppercase tracking-widest text-zinc-500 mb-1.5 block">Customer phone number (E.164)</label>
           <input
             data-testid="wa-invoice-phone"
             autoFocus
@@ -127,7 +135,7 @@ function WhatsAppInvoiceDialog({ sale, onClose }) {
             className="w-full h-10 px-3 rounded-md bg-[#18181B] border border-[#27272A] focus:border-blue-500 focus:outline-none text-sm font-mono"
           />
           <div className="text-[10px] text-zinc-600 mt-1.5 leading-relaxed">
-            Twilio sandbox: recipient must first send the join code from console.twilio.com to <span className="font-mono">+14155238886</span> to receive WhatsApp messages.
+            Twilio trial: recipient number must be verified at console.twilio.com to receive SMS.
           </div>
         </div>
 
