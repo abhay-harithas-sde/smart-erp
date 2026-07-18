@@ -35,7 +35,8 @@ export default function AuthCallback() {
         // Clear hash and let AuthProvider re-hydrate
         window.history.replaceState(null, "", window.location.pathname);
         await refresh();
-        toast.success(`Welcome, ${r.data.user.name}`);
+        const displayName = r.data?.user?.name || r.data?.user?.email || "there";
+        toast.success(`Welcome, ${displayName}`);
         nav("/", { replace: true });
       } catch (e) {
         setError(e?.response?.data?.detail || e.message);
